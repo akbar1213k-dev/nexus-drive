@@ -1,47 +1,66 @@
-import { Note, Folder } from '../types';
+// services/storage.ts
+// Menghubungkan aplikasi React dengan Vercel Serverless Function (Google Drive)
 
-const NOTES_KEY = 'nexus_notes_data';
-const FOLDERS_KEY = 'nexus_folders_data';
+// Asumsi kita menggunakan tipe data dari types.ts yang ada di proyek Anda
+import { Note, Tag, Edge } from '../types'; // Sesuaikan import ini jika nama tipenya berbeda
 
-const DEFAULT_NOTES: Note[] = [
-  {
-    id: '1',
-    title: 'Welcome to Nexus',
-    content: '<h1>Welcome!</h1><p>Type <b>@</b> to link to other notes.</p><p>Try linking to <span class="mention-chip" data-id="2" contenteditable="false">@Project Alpha</span> to see the graph connection.</p>',
-    updatedAt: Date.now(),
-    type: 'note',
-  },
-  {
-    id: '2',
-    title: 'Project Alpha',
-    content: '<h2>Ideas</h2><ul><li>Mobile first design</li><li>Graph visualization</li></ul>',
-    updatedAt: Date.now(),
-    type: 'note',
-  }
-];
+export interface AppData {
+  notes: Note[];
+  tags: Tag[];
+  edges: Edge[];
+}
 
-export const getNotes = (): Note[] => {
+/**
+ * Mengambil seluruh data (Catatan, Tag, Relasi) dari Google Drive via API
+ */
+export const loadData = async (): Promise<AppData> => {
   try {
-    const stored = localStorage.getItem(NOTES_KEY);
-    return stored ? JSON.parse(stored) : DEFAULT_NOTES;
-  } catch (e) {
-    return DEFAULT_NOTES;
+    const response = await fetch('/api/notes', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error('Gagal mengambil data dari Google Drive');
+    }
+    
+    const data = await response.json();
+    
+    // Jika file db.json masih kosong, kembalikan array kosong
+    if (!data.notes) {
+      return { notes: [], tags: [], edges: [] };
+    }
+    
+    return data as AppData;
+  } catch (error) {
+    console.error("Error loading data:", error);
+    // Kembalikan state kosong jika terjadi error agar aplikasi tidak crash
+    return { notes: [], tags: [], edges: [] };
   }
 };
 
-export const saveNotes = (notes: Note[]) => {
-  localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
-};
-
-export const getFolders = (): Folder[] => {
+/**
+ * Menyimpan seluruh perubahan data kembali ke Google Drive via API
+ */
+export const saveData = async (data: AppData): Promise<boolean> => {
   try {
-    const stored = localStorage.getItem(FOLDERS_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch (e) {
-    return [];
-  }
-};
+    const response = await fetch('/api/notes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
 
-export const saveFolders = (folders: Folder[]) => {
-  localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
+    if (!response.ok) {
+      throw new Error('Gagal menyimpan data ke Google Drive');
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error saving data:", error);
+    return false;
+  }
 };
