@@ -283,8 +283,7 @@ export default function App() {
     }
   }, [viewMode]);
   
-  // --- AUTH LISTENER & PERCEPATAN ---
-   []);
+
 
   // --- USEEFFECT BARU DRIVE ---
   useEffect(() => {
@@ -569,16 +568,23 @@ export default function App() {
   };
 
   const handleMoveCurrentNote = async (targetFolderId: string | undefined) => {
-    if (!currentNoteId || !user) return;
+    if (!currentNoteId) return;
     try {
-      await updateDoc(doc(db, "notes", currentNoteId), { 
-        folderId: targetFolderId || "", updatedAt: Date.now() 
-      });
+      const time = Date.now();
+      
+      // 1. Ubah di tampilan UI secara instan
       setNotes(prev => prev.map(n => 
         n.id === currentNoteId 
-          ? { ...n, folderId: targetFolderId || "", updatedAt: Date.now() } 
+          ? { ...n, folderId: targetFolderId || "", updatedAt: time } 
           : n
       ));
+      
+      // 2. Simpan perubahan ke Google Drive
+      const noteToUpdate = notes.find(n => n.id === currentNoteId);
+      if (noteToUpdate) {
+         await saveNote({ ...noteToUpdate, folderId: targetFolderId || "", updatedAt: time });
+      }
+      
       setShowEditorMoveDialog(false);
       alert("Catatan berhasil dipindahkan!");
     } catch (err: any) {
@@ -653,14 +659,20 @@ export default function App() {
                     isDarkMode={isDarkMode} 
                     activeNoteId={currentNoteId} 
                     // --- TAMBAHKAN PROPS INI ---
-                    onDeleteItems={(noteIds) => handleSoftDelete(noteIds, [])} // Graph hanya menampilkan Note, folderIds kosong
-                    onMoveItems={(noteIds, targetFolderId) => {
-                        noteIds.forEach(id => {
-                            updateDoc(doc(db, "notes", id), { 
-                                folderId: targetFolderId || "", 
-                                updatedAt: Date.now() 
-                            });
-                        });
+                    onDeleteItems={(noteIds) => handleSoftDelete(noteIds, [])}
+                    onMoveItems={async (noteIds, targetFolderId) => {
+                        const time = Date.now();
+                        
+                        setNotes(prev => prev.map(n => 
+                            noteIds.includes(n.id) ? { ...n, folderId: targetFolderId || "", updatedAt: time } : n
+                        ));
+                        
+                        for (const id of noteIds) {
+                            const noteToUpdate = notes.find(n => n.id === id);
+                            if (noteToUpdate) {
+                                await saveNote({ ...noteToUpdate, folderId: targetFolderId || "", updatedAt: time });
+                            }
+                        }
                     }}
                 />
             );
@@ -716,28 +728,31 @@ export default function App() {
                             parentId: parentId || null // Simpan Parent ID
                         });
                     }} 
-                    onRenameFolder={(id, n) => updateDoc(doc(db, "folders", id), { name: n })} 
+                    onRenameFolder={async (id, n) => {
+                        setFolders(prev => prev.map(f => f.id === id ? { ...f, name: n } : f));
+                        const folderToUpdate = folders.find(f => f.id === id);
+                        if (folderToUpdate) await saveFolder({ ...folderToUpdate, name: n });
+                    }} 
                     onDeleteItems={handleSoftDelete} 
                     onRestoreItems={handleRestore}
                     onOpenTractApp={() => navigateTo('TRACT')}
                     onPermanentDelete={handleHardDelete}
-                    onMoveItems={(noteIds, folderIds, targetFolderId) => {
-                         // 1. Pindahkan Notes
-                         noteIds.forEach(id => {
-                            updateDoc(doc(db, "notes", id), { 
-                                folderId: targetFolderId || "", 
-                                updatedAt: Date.now() 
-                            });
-                         });
-            
-                         // 2. Pindahkan Folders (Nested)
-                         folderIds.forEach(id => {
-                            updateDoc(doc(db, "folders", id), { 
-                                parentId: targetFolderId || null 
-                            });
-                         });
+                    onMoveItems={async (noteIds, folderIds, targetFolderId) => {
+                         const time = Date.now();
+                         
+                         setNotes(prev => prev.map(n => noteIds.includes(n.id) ? { ...n, folderId: targetFolderId || "", updatedAt: time } : n));
+                         setFolders(prev => prev.map(f => folderIds.includes(f.id) ? { ...f, parentId: targetFolderId || null } : f));
+                         
+                         for (const id of noteIds) {
+                             const n = notes.find(x => x.id === id);
+                             if (n) await saveNote({ ...n, folderId: targetFolderId || "", updatedAt: time });
+                         }
+                         for (const id of folderIds) {
+                             const f = folders.find(x => x.id === id);
+                             if (f) await saveFolder({ ...f, parentId: targetFolderId || null });
+                         }
                     }}
-                    onImportData={handleImportData} 
+                    onImportData={handleImportData}
                 />
             );
     }
