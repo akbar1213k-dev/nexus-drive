@@ -288,10 +288,9 @@ export default function App() {
     setIsReady(false);
     try {
       const dataNotes = await getNotes();
-      // Asumsikan Anda juga punya fungsi getFolders di storage.ts
-      // const dataFolders = await getFolders(); 
+      const dataFolders = await getFolders(); 
       setNotes(dataNotes);
-      // setFolders(dataFolders);
+      setFolders(dataFolders);
     } catch (error) {
       setDbError("Gagal memuat data dari Google Drive");
     } finally {
@@ -565,7 +564,7 @@ export default function App() {
                     onCreateNote={(type, folderId) => handleCreateNote('', type, folderId, true)} 
                     onCreateFolder={async (name, parentId) => {
                         const id = 'f_' + Date.now();
-                        const newFolder = { 
+                        const newFolder: Folder = { 
                             id, 
                             name, 
                             createdAt: Date.now(), 
@@ -574,6 +573,7 @@ export default function App() {
                             deletedAt: null
                         };
                         setFolders(prev => [newFolder, ...prev]);
+                        await saveFolder(newFolder);
                     }}
                     onRenameFolder={async (id, n) => {
                         setFolders(prev => prev.map(f => f.id === id ? { ...f, name: n } : f));
