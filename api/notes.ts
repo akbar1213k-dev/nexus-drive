@@ -2,13 +2,16 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { google } from 'googleapis';
 
-// Inisialisasi Google Auth
+// Inisialisasi Google Auth (Anti-Gagal Format Private Key)
+const rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
+const formattedKey = rawKey.includes('-----BEGIN PRIVATE KEY-----') 
+    ? rawKey.replace(/\\n/g, '\n') 
+    : undefined;
+
 const auth = new google.auth.GoogleAuth({
   credentials: {
     client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    private_key: process.env.GOOGLE_PRIVATE_KEY 
-        ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-        : undefined,
+    private_key: formattedKey,
   },
   scopes: ['https://www.googleapis.com/auth/drive'],
 });
