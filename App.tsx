@@ -8,19 +8,9 @@ import { HomeView } from './components/HomeView';
 import { PreviewSheet } from './components/PreviewSheet';
 import { SettingsView } from './components/SettingsView';
 import { TractView } from './components/TractView';
-import { db, auth } from './services/firebase'; 
-import { 
-  collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, updateDoc, where 
-} from 'firebase/firestore';
-import { 
-  onAuthStateChanged, 
-  signOut, 
-  User,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInAnonymously,
-  sendPasswordResetEmail
-} from 'firebase/auth'; 
+import { getNotes, getFolders, saveNote, deleteNote, saveFolder, deleteFolder } from './services/storage';
+// Catatan: Jika getFolders, saveFolder, deleteFolder belum ada di storage.ts Anda, 
+// kita akan perlu menambahkannya nanti, atau untuk saat ini biarkan fungsi-fungsi tersebut tidak dipanggil.
 
 // --- HELPER: LOCAL STORAGE (Tetap sama) --
 const getLocalNotes = (): Note[] => {
@@ -40,16 +30,6 @@ const clearLocalStorage = () => localStorage.removeItem('nexus_backup_notes');
 
 export default function App() {
   // [PERCEPAT 1] Inisialisasi User langsung dari LocalStorage!
-  // Kita tidak mulai dari null, tapi kita cek apakah ada jejak login sebelumnya.
-  const [user, setUser] = useState<User | null>(() => {
-    const savedUid = localStorage.getItem('nexus_user_uid');
-    if (savedUid) {
-       // Kita buat objek user "palsu" sementara agar UI langsung render Home
-       // Firebase akan menimpa ini nanti dengan objek User asli yang lebih lengkap
-       return { uid: savedUid, email: null, displayName: 'Loading...' } as User;
-    }
-    return null;
-  });
 
   // State Auth Loading kita hapus/tidak dipakai untuk blocking UI lagi
   // agar langsung tembus ke renderContent()
@@ -131,29 +111,6 @@ export default function App() {
   const [resetMessage, setResetMessage] = useState('');
 
   const [showEditorMoveDialog, setShowEditorMoveDialog] = useState(false);
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) {
-      setAuthError('Mohon masukkan email Anda terlebih dahulu.');
-      return;
-    }
-    setIsLoadingAuth(true);
-    setAuthError('');
-    setResetMessage('');
-    try {
-      await sendPasswordResetEmail(auth, email);
-      setResetMessage('Link reset password telah dikirim ke email! Cek inbox/spam.');
-      setTimeout(() => {
-        setIsResetting(false);
-        setResetMessage('');
-      }, 5000);
-    } catch (err: any) {
-      setAuthError(err.message);
-    } finally {
-      setIsLoadingAuth(false);
-    }
-  };
 
   const [dbError, setDbError] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode>('HOME');
@@ -299,21 +256,27 @@ export default function App() {
   }, [viewMode]);
   
   // --- AUTH LISTENER & PERCEPATAN ---
+   []);
+
+  // --- USEEFFECT BARU DRIVE ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-          // [PERCEPAT 2] Jika login valid, simpan UID ke local storage
-          localStorage.setItem('nexus_user_uid', currentUser.uid);
-          setUser(currentUser); // Update user dengan data asli dari Firebase
-      } else {
-          // Jika logout atau sesi habis
-          localStorage.removeItem('nexus_user_uid');
-          setUser(null);
-          setNotes([]); setFolders([]); setIsReady(false); setAuthError(''); setDbError('');
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  const loadDataFromDrive = async () => {
+    setIsReady(false);
+    try {
+      const dataNotes = await getNotes();
+      // Asumsikan Anda juga punya fungsi getFolders di storage.ts
+      // const dataFolders = await getFolders(); 
+      setNotes(dataNotes);
+      // setFolders(dataFolders);
+    } catch (error) {
+      setDbError("Gagal memuat data dari Google Drive");
+    } finally {
+      setIsReady(true);
+    }
+  };
+  
+  loadDataFromDrive();
+}, []);
 
   // --- FIREBASE LISTENERS ---
   useEffect(() => {
@@ -436,27 +399,9 @@ export default function App() {
     return () => { unsubNotes(); unsubFolders(); };
   }, [user]); // useEffect akan re-run ketika user berubah dari "Fake" ke "Asli"
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault(); setAuthError(''); setIsLoadingAuth(true);
-    try {
-      if (isRegistering) await createUserWithEmailAndPassword(auth, email, password);
-      else await signInWithEmailAndPassword(auth, email, password);
-    } catch (err: any) { setAuthError(err.message); } 
-    finally { setIsLoadingAuth(false); }
-  };
+   
 
-  const handleAnonymousLogin = async () => {
-    try { await signInAnonymously(auth); } catch (err: any) { setAuthError(err.message); }
-  };
-
-  const handleLogout = async () => {
-      // [PERCEPAT 3] Hapus jejak saat logout
-      localStorage.removeItem('nexus_user_uid');
-      await signOut(auth); 
-      clearLocalStorage(); 
-      setViewMode('HOME');
-      // setUser(null) ditangani di listener auth
-  };
+   
 
   const handleManualSync = async () => {
       if (!user) return;
@@ -616,89 +561,6 @@ export default function App() {
   // Dan karena state "user" diinisialisasi dengan data dari localStorage,
   // maka kondisi "if (!user)" di bawah ini akan bernilai FALSE (terlewati)
   // sehingga aplikasi langsung merender Konten Utama.
-
-  // --- RENDER LOGIN SCREEN (Hanya tampil jika benar-benar logout / user null) ---
-  if (!user) {
-    return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 px-4 transition-colors">
-        <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-2xl shadow-blue-500/10 border border-white dark:border-gray-700 max-w-sm w-full transform transition-all">
-            
-            <div className="text-center mb-10">
-                <div className="relative w-20 h-20 mx-auto mb-6">
-                    <div className="absolute inset-0 bg-blue-500 blur-2xl opacity-20 dark:opacity-40 animate-pulse"></div>
-                    <div className="relative w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/30 transform hover:rotate-12 transition-transform duration-300">
-                        <svg className="w-10 h-10 text-white drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                    </div>
-                </div>
-                <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">Nexus Notes</h1>
-                <div className="h-1 w-12 bg-blue-600 mx-auto mt-2 rounded-full"></div>
-            </div>
-            
-            {(authError || resetMessage) && (
-              <div className={`mb-6 p-4 text-xs rounded-xl border flex items-center gap-2 animate-in fade-in zoom-in ${resetMessage ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                <span>{authError || resetMessage}</span>
-              </div>
-            )}
-
-            {isResetting ? (
-              <form onSubmit={handleResetPassword} className="space-y-4">
-                <p className="text-xs text-center text-gray-500 mb-4">Masukkan email Anda untuk menerima instruksi reset password.</p>
-                <input 
-                  type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-5 py-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Email Address" required
-                />
-                <button type="submit" disabled={isLoadingAuth} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50">
-                  {isLoadingAuth ? 'Mengirim...' : 'Kirim Link Reset'}
-                </button>
-                <button type="button" onClick={() => setIsResetting(false)} className="w-full text-xs text-gray-500 hover:text-blue-600">Kembali ke Login</button>
-              </form>
-            ) : (
-              <form onSubmit={handleEmailAuth} className="space-y-4">
-                <input 
-                  type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-5 py-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Email Address" required
-                />
-                <input 
-                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-5 py-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Password" required
-                />
-                
-                {!isRegistering && (
-                  <div className="flex justify-end">
-                    <button type="button" onClick={() => setIsResetting(true)} className="text-xs text-blue-600 hover:underline">Lupa Password?</button>
-                  </div>
-                )}
-
-                <button type="submit" disabled={isLoadingAuth} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-3.5 rounded-2xl shadow-lg active:scale-95 disabled:opacity-50">
-                  {isLoadingAuth ? 'Memproses...' : (isRegistering ? 'Buat Akun Baru' : 'Masuk Ke Nexus')}
-                </button>
-
-                <div className="mt-6 text-center">
-                  <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="text-xs text-gray-500 hover:text-blue-600">
-                    {isRegistering ? 'Sudah punya akun? Login' : 'Belum punya akun? Daftar Sekarang'}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {!isResetting && (
-              <>
-                <div className="relative my-10">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100 dark:border-gray-700"></div></div>
-                  <div className="relative flex justify-center"><span className="px-4 bg-white dark:bg-gray-800 text-gray-400 text-[10px] font-bold">Atau</span></div>
-                </div>
-                <button onClick={handleAnonymousLogin} className="w-full bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-3 border border-gray-100 dark:border-gray-700">Jelajahi Sebagai Tamu</button>
-              </>
-            )}
-        </div>
-      </div>
-    );
-  }
 
   // --- RENDER CONTENT ---
   const renderContent = () => {
