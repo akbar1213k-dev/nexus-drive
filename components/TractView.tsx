@@ -30,10 +30,7 @@ import {
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-// Import firebase dihapus sementara agar Vercel bisa berhasil deploy
-const db = {};
-import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
-
+// Menggunakan localStorage untuk penyimpanan sementara karena Firebase sudah dihapus
 // Utility for Tailwind classes
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -502,7 +499,7 @@ export function TractView({
       type,
       timestamp: now,
       description: description.trim(),
-      userId: userId || '',
+      userId: 'local_user',
       startTime: finalStartTime,
       endTime: finalEndTime,
       duration: finalDuration,
@@ -511,13 +508,7 @@ export function TractView({
       resumes: []
     };
 
-    if (userId) {
-      setDoc(doc(db, 'activities', newActivity.id), newActivity).catch(err => {
-         console.error("Gagal simpan ke Firebase:", err);
-         alert("Gagal sinkronisasi ke awan! Error: " + err.message);
-      });
-    }
-
+    // Firebase (setDoc) dihilangkan. Langsung simpan ke penyimpanan lokal.
     const updatedActivities = [newActivity, ...activities].sort((a, b) => b.timestamp - a.timestamp);
     setActivities(updatedActivities);
     
@@ -574,22 +565,17 @@ export function TractView({
     const newActivity: Activity = {
       id: now.toString(),
       name: suggName.trim(),
-      // Jika pengguna sempat mengubah 'type' di form, pakai yang di form. Jika tidak, pakai saran dari bubble.
       type: type.trim() || suggType.trim() || 'Lainnya',
       timestamp: now,
       description: description.trim(), 
-      userId: userId || '',
+      userId: 'local_user',
       startTime: finalStartTime,
       endTime: finalEndTime,
       duration: finalDuration,
-      isTimerActive: isTimerActive, // <-- MEMBAWA STATUS TIMER
-      pauses: [],                   // <-- MENYIAPKAN ARRAY JEDA
-      resumes: []                   // <-- MENYIAPKAN ARRAY LANJUT
+      isTimerActive: isTimerActive, 
+      pauses: [],                   
+      resumes: []                   
     };
-
-    if (userId) {
-      setDoc(doc(db, 'activities', newActivity.id), newActivity).catch(err => console.error("Gagal:", err));
-    }
 
     const updatedActivities = [newActivity, ...activities].sort((a, b) => b.timestamp - a.timestamp);
     setActivities(updatedActivities);
@@ -636,15 +622,11 @@ export function TractView({
         type: editType,
         timestamp: originalActivity ? originalActivity.timestamp : Date.now(),
         description: editDescription.trim(),
-        userId: userId || '',
+        userId: 'local_user',
         startTime: finalStartTime,
         endTime: finalEndTime,
         duration: finalDuration
     };
-
-    if (userId) {
-        setDoc(doc(db, 'activities', editingId), updatedActivity, { merge: true }).catch(err => console.error("Gagal update:", err));
-    }
 
     const updatedActivities = activities.map(act => act.id === editingId ? updatedActivity : act);
     updatedActivities.sort((a, b) => b.timestamp - a.timestamp);
