@@ -85,26 +85,47 @@ export default function App() {
     }
 
     const time = Date.now();
-    const batchPromises = [
-      ...noteIds.map(id => updateDoc(doc(db, "notes", id), { deletedAt: time, updatedAt: time })),
-      ...folderIds.map(id => updateDoc(doc(db, "folders", id), { deletedAt: time }))
-    ];
-    await Promise.all(batchPromises);
+    
+    // 1. Update State Lokal
+    const updatedNotes = notes.map(n => noteIds.includes(n.id) ? { ...n, deletedAt: time, updatedAt: time } : n);
+    const updatedFolders = folders.map(f => folderIds.includes(f.id) ? { ...f, deletedAt: time } : f);
+    
+    setNotes(updatedNotes);
+    setFolders(updatedFolders);
+    
+    // 2. Simpan ke Google Drive (Satu per satu)
+    for (const noteId of noteIds) {
+       const note = updatedNotes.find(n => n.id === noteId);
+       if (note) await saveNote(note);
+    }
+    // (Abaikan simpan folder ke Drive sementara waktu sampai storage folder siap)
+
     alert("Item dipindahkan ke Sampah. Akan dihapus permanen dalam 24 jam.");
   };
   
   const handleRestore = async (noteIds: string[], folderIds: string[]) => {
-    const batchPromises = [
-      ...noteIds.map(id => updateDoc(doc(db, "notes", id), { deletedAt: null })),
-      ...folderIds.map(id => updateDoc(doc(db, "folders", id), { deletedAt: null }))
-    ];
-    await Promise.all(batchPromises);
+    const updatedNotes = notes.map(n => noteIds.includes(n.id) ? { ...n, deletedAt: null } : n);
+    const updatedFolders = folders.map(f => folderIds.includes(f.id) ? { ...f, deletedAt: null } : f);
+    
+    setNotes(updatedNotes);
+    setFolders(updatedFolders);
+
+    for (const noteId of noteIds) {
+       const note = updatedNotes.find(n => n.id === noteId);
+       if (note) await saveNote(note);
+    }
   };
 
   const handleHardDelete = async (noteIds: string[], folderIds: string[]) => {
     if(!confirm("Hapus permanen? Data tidak bisa dikembalikan.")) return;
-    noteIds.forEach(id => { deleteDoc(doc(db, "notes", id)); removeFromLocalStorage(id); });
-    folderIds.forEach(id => deleteDoc(doc(db, "folders", id)));
+    
+    for (const id of noteIds) { 
+      await deleteNote(id); 
+      removeFromLocalStorage(id); 
+    }
+    
+    setNotes(prev => prev.filter(n => !noteIds.includes(n.id)));
+    setFolders(prev => prev.filter(f => !folderIds.includes(f.id)));
   };
    
   // Auth State
@@ -440,21 +461,20 @@ export default function App() {
       }
   }, [isAutoSync]);
 
-  const handleUpdateNote = (updated: Note) => {
-    if (!user) return;
-    const noteWithUser = { ...updated, userId: user.uid, updatedAt: Date.now() }; 
-    setNotes(prev => prev.map(n => n.id === updated.id ? noteWithUser : n));
-    saveToLocalStorage(noteWithUser);
+  const handleUpdateNote = async (updated: Note) => {
+    // Hilangkan referensi userId karena kita cuma pakai 1 user pribadi
+    const noteToSave = { ...updated, updatedAt: Date.now() }; 
+    
+    setNotes(prev => prev.map(n => n.id === updated.id ? noteToSave : n));
+    saveToLocalStorage(noteToSave);
     
     if (isAutoSync) {
         if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-        syncTimerRef.current = setTimeout(() => {
-             setDoc(doc(db, "notes", updated.id), noteWithUser, { merge: true })
-                .then(() => { 
-                   removeFromLocalStorage(updated.id); 
-                   setSyncStatus('saved'); 
-                   setTimeout(() => setSyncStatus('idle'), 2000); 
-                });
+        syncTimerRef.current = setTimeout(async () => {
+             await saveNote(noteToSave);
+             removeFromLocalStorage(updated.id); 
+             setSyncStatus('saved'); 
+             setTimeout(() => setSyncStatus('idle'), 2000); 
         }, syncInterval); 
     } else {
         setSyncStatus('unsaved');
@@ -467,15 +487,17 @@ export default function App() {
     folderId?: string,
     shouldNavigate: boolean = false 
   ): Promise<string> => {
-    if (!user) return '';
     const id = Date.now().toString();
     const finalTitle = title.trim() || 'Untitled';
     const newNote: Note = { 
-      id, userId: user.uid, title: finalTitle, content: '', updatedAt: Date.now(), type, folderId: folderId || "" 
+      id, userId: 'local_user', title: finalTitle, content: '', updatedAt: Date.now(), type, folderId: folderId || "" 
     };
+    
     setNotes(p => [newNote, ...p]);
     saveToLocalStorage(newNote); 
-    if (isAutoSync) setDoc(doc(db, "notes", id), newNote, { merge: true });
+    
+    if (isAutoSync) await saveNote(newNote);
+    
     if (shouldNavigate) navigateTo('EDITOR', id);
     return id;
   };
@@ -663,11 +685,11 @@ export default function App() {
                                 id: targetId, 
                                 name: LINKED_FOLDER_NAME, 
                                 createdAt: Date.now(), 
-                                userId: user.uid,
+                                userId: 'local_user',
                                 deletedAt: null 
                             };
                             setFolders(prev => [newFolder, ...prev]);
-                            await setDoc(doc(db, "folders", targetId), newFolder);
+                            // (Abaikan simpan folder ke Drive sementara)
                         }
                         return handleCreateNote(title, 'note', targetId, false);
                     }}
