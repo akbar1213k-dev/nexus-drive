@@ -1,34 +1,29 @@
-// services/storage.ts
-import { Note, Tag, Edge } from '../types';
+import { Note, Folder, Tag, Edge } from '../types';
 
 export interface AppData {
   notes: Note[];
+  folders: Folder[];
   tags: Tag[];
   edges: Edge[];
 }
 
-// -------------------------------------------------------------
-// FUNGSI INTI API (GET/POST ke Vercel Serverless Function)
-// -------------------------------------------------------------
-
-/** Mengambil seluruh data dari Google Drive */
 const fetchAllData = async (): Promise<AppData> => {
   try {
     const response = await fetch('/api/notes', { method: 'GET' });
-    if (!response.ok) throw new Error('Gagal mengambil data');
+    if (!response.ok) throw new Error('Gagal mengambil data dari server');
     const data = await response.json();
     return {
       notes: data.notes || [],
+      folders: data.folders || [],
       tags: data.tags || [],
       edges: data.edges || []
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching data:", error);
-    return { notes: [], tags: [], edges: [] };
+    return { notes: [], folders: [], tags: [], edges: [] };
   }
 };
 
-/** Menyimpan seluruh data ke Google Drive */
 const saveAllData = async (data: AppData): Promise<void> => {
   try {
     const response = await fetch('/api/notes', {
@@ -36,107 +31,50 @@ const saveAllData = async (data: AppData): Promise<void> => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Gagal menyimpan data');
-  } catch (error) {
+    if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Gagal menyimpan ke server');
+    }
+  } catch (error: any) {
     console.error("Error saving data:", error);
+    alert("SINKRONISASI GAGAL: " + error.message + "\n\n1. Cek Vercel Environment Variables Anda.\n2. Pastikan GOOGLE_DRIVE_DB_FILE_ID adalah ID File, bukan ID Folder.");
   }
 };
-
-// -------------------------------------------------------------
-// ADAPTOR UNTUK KOMPONEN UI (App.tsx / Editor.tsx / GraphView.tsx)
-// -------------------------------------------------------------
 
 export const getNotes = async (): Promise<Note[]> => {
   const data = await fetchAllData();
   return data.notes;
 };
 
-export const getTags = async (): Promise<Tag[]> => {
+export const getFolders = async (): Promise<Folder[]> => {
   const data = await fetchAllData();
-  return data.tags;
-};
-
-export const getEdges = async (): Promise<Edge[]> => {
-  const data = await fetchAllData();
-  return data.edges;
+  return data.folders;
 };
 
 export const saveNote = async (note: Note): Promise<void> => {
   const data = await fetchAllData();
   const index = data.notes.findIndex(n => n.id === note.id);
-  
-  if (index > -1) {
-    data.notes[index] = note; // Update
-  } else {
-    data.notes.push(note); // Insert baru
-  }
-  
+  if (index > -1) data.notes[index] = note;
+  else data.notes.push(note);
   await saveAllData(data);
 };
 
 export const deleteNote = async (id: string): Promise<void> => {
   const data = await fetchAllData();
   data.notes = data.notes.filter(n => n.id !== id);
-  // Optional: Hapus juga edge yang berhubungan dengan node ini jika diperlukan
-  data.edges = data.edges.filter(e => e.source !== id && e.target !== id);
   await saveAllData(data);
 };
 
-export const saveTags = async (tags: Tag[]): Promise<void> => {
+export const saveFolder = async (folder: Folder): Promise<void> => {
   const data = await fetchAllData();
-  data.tags = tags;
+  const index = data.folders.findIndex(f => f.id === folder.id);
+  if (index > -1) data.folders[index] = folder;
+  else data.folders.push(folder);
   await saveAllData(data);
 };
 
-export const saveEdges = async (edges: Edge[]): Promise<void> => {
+export const deleteFolder = async (id: string): Promise<void> => {
   const data = await fetchAllData();
-  data.edges = edges;
+  data.folders = data.folders.filter(f => f.id !== id);
   await saveAllData(data);
-};
-
-// Tambahkan fungsi ini di bagian paling bawah file services/storage.ts
-
-/**
- * Mengunggah file gambar ke Google Drive via API Vercel
- * @param file Objek File dari input HTML
- * @returns Promise berupa URL gambar yang berhasil diunggah, atau null jika gagal
- */
-export const uploadImage = async (file: File): Promise<string | null> => {
-  return new Promise((resolve, reject) => {
-    // Membaca file menggunakan FileReader di sisi client
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    
-    reader.onload = async () => {
-      try {
-        // Mengambil hanya bagian data Base64-nya saja
-        const base64String = (reader.result as string).split(',')[1];
-        
-        // Mengirim data ke Vercel Serverless Function
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: `${Date.now()}_${file.name}`, // Memberikan nama unik
-            mimeType: file.type,
-            base64Data: base64String
-          })
-        });
-
-        if (!response.ok) throw new Error('Gagal upload ke server');
-        
-        const data = await response.json();
-        // Mengembalikan URL publik dari Google Drive
-        resolve(data.url); 
-      } catch (error) {
-        console.error("Error saat upload gambar:", error);
-        resolve(null);
-      }
-    };
-    
-    reader.onerror = (error) => {
-      console.error("Error membaca file:", error);
-      reject(error);
-    };
-  });
 };
