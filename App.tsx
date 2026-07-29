@@ -46,15 +46,22 @@ export default function App() {
 
     const cleanupTrash = async () => {
       const expiredNotes = notes.filter(n => n.deletedAt && (now - n.deletedAt > ONE_DAY_MS));
-      expiredNotes.forEach(async (n) => {
-        await deleteDoc(doc(db, "notes", n.id));
+      for (const n of expiredNotes) {
+        await deleteNote(n.id);
         removeFromLocalStorage(n.id);
-      });
+      }
 
       const expiredFolders = folders.filter(f => f.deletedAt && (now - f.deletedAt > ONE_DAY_MS));
-      expiredFolders.forEach(async (f) => {
-        await deleteDoc(doc(db, "folders", f.id));
-      });
+      for (const f of expiredFolders) {
+        await deleteFolder(f.id); // Asumsikan Anda membuat deleteFolder di storage.ts
+      }
+      
+      // Jika ada yang dihapus, fetch ulang dari Drive
+      if (expiredNotes.length > 0 || expiredFolders.length > 0) {
+         const dataNotes = await getNotes();
+         setNotes(dataNotes);
+         // setFolders(await getFolders());
+      }
     };
 
     const timer = setInterval(cleanupTrash, 60000); 
