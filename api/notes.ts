@@ -21,14 +21,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (req.method === 'GET') {
-      // Logika untuk MENGAMBIL data dari db.json
       const response = await drive.files.get({
         fileId: fileId as string,
         alt: 'media',
       });
       
-      return res.status(200).json(response.data || { notes: [], tags: [], edges: [] });
-    } 
+      let data = response.data;
+      
+      // Jika file di Drive benar-benar kosong (string kosong), kita berikan data awal default
+      if (typeof data === 'string') {
+         if (data.trim() === '') {
+             data = { notes: [], folders: [], tags: [], edges: [] };
+         } else {
+             try { 
+                 data = JSON.parse(data); 
+             } catch(e) { 
+                 data = { notes: [], folders: [], tags: [], edges: [] }; 
+             }
+         }
+      }
+      
+      // Pastikan struktur dasar JSON selalu ada agar aplikasi tidak error
+      const finalData = data || {};
+      return res.status(200).json({
+         notes: finalData.notes || [],
+         folders: finalData.folders || [],
+         tags: finalData.tags || [],
+         edges: finalData.edges || []
+      });
+    }
     
     else if (req.method === 'POST') {
       // Logika untuk MENYIMPAN/UPDATE data ke db.json
