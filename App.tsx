@@ -7,9 +7,7 @@ import { TopBar } from './components/TopBar';
 import { HomeView } from './components/HomeView';
 import { PreviewSheet } from './components/PreviewSheet';
 import { SettingsView } from './components/SettingsView';
-import { TractView } from './components/TractView';
 import { getNotes, saveNote, deleteNote } from './services/storage';
-
 // --- HELPER: LOCAL STORAGE (Tetap sama) --
 const getLocalNotes = (): Note[] => {
   try { return JSON.parse(localStorage.getItem('nexus_backup_notes') || '[]'); } catch { return []; }
@@ -314,16 +312,17 @@ export default function App() {
   const handleManualSync = async () => {
       setSyncStatus('syncing');
       try {
+          // 1. Simpan catatan lokal yang belum terkirim
           const localNotes = getLocalNotes();
-          if (localNotes.length === 0) {
-              setSyncStatus('saved');
-              setTimeout(() => setSyncStatus('idle'), 2000);
-              return;
-          }
           for (const note of localNotes) {
               await saveNote({ ...note, userId: 'local_user' });
               removeFromLocalStorage(note.id); 
           }
+          
+          // 2. Tarik paksa data terbaru dari Google Drive
+          const dataNotes = await getNotes();
+          setNotes(dataNotes);
+
           setSyncStatus('saved');
           setTimeout(() => setSyncStatus('idle'), 2000);
       } catch (error) {
@@ -480,18 +479,6 @@ export default function App() {
     
   
     switch (viewMode) {
-        case 'TRACT':
-            return (
-                <div className="absolute inset-0 z-50 bg-white dark:bg-gray-950 overflow-hidden flex flex-col">
-                    <TractView 
-                        onGoHome={() => navigateTo('HOME')} 
-                        userId={'local_user'} 
-                        notes={notes} 
-                        onLinkClick={(id) => navigateTo('EDITOR', id)} 
-                    />
-                </div>
-            );
-        
         case 'SETTINGS':
             return (
                 <SettingsView 
