@@ -232,19 +232,16 @@ export default function App() {
 
   const navigateTo = (mode: ViewMode, noteId: string = '') => {
     if (viewMode === mode && currentNoteId === noteId) return;
+    
     // --- TAMBAHAN BARU: Update lastOpenedAt saat membuka editor ---
-    if (mode === 'EDITOR' && noteId && user) {
+    if (mode === 'EDITOR' && noteId) {
         const now = Date.now();
+        setNotes(prev => prev.map(n => n.id === noteId ? { ...n, lastOpenedAt: now } : n));
         
-        // 1. Update State Lokal agar UI langsung berubah
-        setNotes(prev => prev.map(n => 
-            n.id === noteId ? { ...n, lastOpenedAt: now } : n
-        ));
-
-        // 2. Update ke Firebase (Silent update, tidak perlu loading state)
-        // Kita gunakan updateDoc langsung tanpa menunggu
-        updateDoc(doc(db, "notes", noteId), { lastOpenedAt: now })
-            .catch(err => console.error("Failed to update last opened:", err));
+        const noteToUpdate = notes.find(n => n.id === noteId);
+        if (noteToUpdate) {
+            saveNote({ ...noteToUpdate, lastOpenedAt: now }).catch(console.error);
+        }
     }
     // --------------
     setViewMode(mode);
@@ -433,7 +430,6 @@ export default function App() {
    
 
   const handleManualSync = async () => {
-      if (!user) return;
       setSyncStatus('syncing');
       try {
           const localNotes = getLocalNotes();
@@ -442,12 +438,10 @@ export default function App() {
               setTimeout(() => setSyncStatus('idle'), 2000);
               return;
           }
-          const promises = localNotes.map(async (note) => {
-              const noteToSync = { ...note, userId: user.uid };
-              await setDoc(doc(db, "notes", note.id), noteToSync, { merge: true });
+          for (const note of localNotes) {
+              await saveNote({ ...note, userId: 'local_user' });
               removeFromLocalStorage(note.id); 
-          });
-          await Promise.all(promises);
+          }
           setSyncStatus('saved');
           setTimeout(() => setSyncStatus('idle'), 2000);
       } catch (error) {
@@ -515,11 +509,6 @@ export default function App() {
   };
 
   const handleImportData = async (data: { notes: Note[], folders: Folder[] }) => {
-    if (!user) {
-        alert("⚠️ GAGAL IMPORT: Anda harus LOGIN terlebih dahulu agar data bisa disimpan ke akun Anda.");
-        return;
-    }
-
     try {
         const notesToImport = data.notes || [];
         const foldersToImport = data.folders || [];
@@ -529,39 +518,25 @@ export default function App() {
             return;
         }
 
-        const promises = [
-            ...notesToImport.map(x => setDoc(doc(db, "notes", x.id), { 
-                ...x, 
-                userId: user.uid, 
-                updatedAt: x.updatedAt || Date.now() 
-            })),
-            ...foldersToImport.map(x => setDoc(doc(db, "folders", x.id), { 
-                ...x, 
-                userId: user.uid 
-            }))
-        ];
-
-        await Promise.all(promises);
-        alert(`✅ Sukses! Berhasil memulihkan ${notesToImport.length} catatan dan ${foldersToImport.length} folder.`);
+        for (const note of notesToImport) {
+            await saveNote({ ...note, userId: 'local_user', updatedAt: note.updatedAt || Date.now() });
+        }
+        
+        alert(`✅ Sukses! Berhasil memulihkan ${notesToImport.length} catatan. (Folder akan disinkronkan bertahap)`);
         window.location.reload(); 
 
     } catch (err: any) {
         console.error("Detail Error Import:", err);
-        alert(`❌ Terjadi kesalahan saat menyimpan ke database:\n\n${err.message}`);
+        alert(`❌ Terjadi kesalahan:\n\n${err.message}`);
     }
   };
 
   const handleDeleteCurrentNote = async () => {
-    if (!currentNoteId || !user) return;
+    if (!currentNoteId) return;
     
-    // UBAH 1: Konfirmasi dipindahkan ke sampah, bukan hapus permanen
     if (confirm("Pindahkan catatan ini ke Sampah?")) {
       try {
-        // UBAH 2: Gunakan handleSoftDelete, jangan deleteDoc
-        // Kita masukkan currentNoteId ke dalam array karena handleSoftDelete butuh array
         await handleSoftDelete([currentNoteId], []);
-        
-        // Kembali ke menu utama setelah dihapus
         navigateTo('HOME');
       } catch (err: any) {
         alert("Gagal memindahkan ke sampah: " + err.message);
@@ -629,7 +604,7 @@ export default function App() {
                 <div className="absolute inset-0 z-50 bg-white dark:bg-gray-950 overflow-hidden flex flex-col">
                     <TractView 
                         onGoHome={() => navigateTo('HOME')} 
-                        userId={user?.uid} 
+                        userId={'local_user'} 
                         notes={notes} 
                         onLinkClick={(id) => navigateTo('EDITOR', id)} 
                     />
@@ -643,9 +618,9 @@ export default function App() {
                   onToggleAutoSync={setIsAutoSync}
                   syncInterval={syncInterval}
                   onChangeInterval={setSyncInterval}
-                  onLogout={handleLogout}
-                  userEmail={user?.email}
-                  isAnonymous={user?.isAnonymous}
+                  onLogout={() => alert('Mode Offline: Fitur keluar akun tidak diperlukan.')}
+                  userEmail={'Akun Pribadi'}
+                  isAnonymous={false}
                   notes={notes}
                   folders={folders}
                   onImportData={handleImportData}
@@ -722,14 +697,16 @@ export default function App() {
                     onCreateNote={(type, folderId) => handleCreateNote('', type, folderId, true)} 
                     onCreateFolder={async (name, parentId) => {
                         const id = 'f_' + Date.now();
-                        await setDoc(doc(db, "folders", id), { 
+                        const newFolder = { 
                             id, 
                             name, 
                             createdAt: Date.now(), 
-                            userId: user?.uid,
-                            parentId: parentId || null // Simpan Parent ID
-                        });
-                    }} 
+                            userId: 'local_user',
+                            parentId: parentId || null,
+                            deletedAt: null
+                        };
+                        setFolders(prev => [newFolder, ...prev]);
+                    }}
                     onRenameFolder={async (id, n) => {
                         setFolders(prev => prev.map(f => f.id === id ? { ...f, name: n } : f));
                         const folderToUpdate = folders.find(f => f.id === id);
