@@ -6,7 +6,10 @@ import { google } from 'googleapis';
 const auth = new google.auth.GoogleAuth({
   credentials: {
     client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'), // Memperbaiki format newline
+    // Perbaikan super kuat untuk menangani masalah enter (\n) yang hilang atau terselip dari Vercel
+    private_key: process.env.GOOGLE_PRIVATE_KEY
+      ? process.env.GOOGLE_PRIVATE_KEY.split(String.raw`\n`).join('\n').replace(/"/g, '') 
+      : undefined,
   },
   scopes: ['https://www.googleapis.com/auth/drive'],
 });
