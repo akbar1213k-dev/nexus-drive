@@ -304,126 +304,8 @@ export default function App() {
   loadDataFromDrive();
 }, []);
 
-  // --- FIREBASE LISTENERS ---
-  useEffect(() => {
-    if (!user) return;
-    setDbError('');
-
-    // Karena user.uid mungkin dari local storage (fake user), query tetap akan jalan
-    // dan Firebase akan menangani caching data-nya.
-    const qNotes = query(
-      collection(db, "notes"), 
-      where("userId", "==", user.uid), 
-      orderBy("updatedAt", "desc")
-    );
-
-    const unsubNotes = onSnapshot(qNotes, (snap) => {
-      const serverNotes = snap.docs.map(d => d.data() as Note);
-      const localNotes = getLocalNotes();
-       
-      const mergedNotes = serverNotes.map(sNote => {
-        const lNote = localNotes.find(l => l.id === sNote.id);
-        return (lNote && lNote.updatedAt > sNote.updatedAt) ? lNote : sNote;
-      });
-
-      localNotes.forEach(lNote => {
-        if (!mergedNotes.find(m => m.id === lNote.id)) mergedNotes.push(lNote);
-      });
-
-      mergedNotes.sort((a, b) => b.updatedAt - a.updatedAt);
-      // --- LOGIKA RESET CHECKBOX BERJANGKA ---
-      const now = new Date();
-      let hasUpdates = false;
-      
-      // Clone array agar bisa dimodifikasi
-      const updatedNotes = mergedNotes.map(note => {
-          // Hanya proses jika konten memiliki checkbox recurring
-          if (note.content.includes('class="todo-item recurring"')) {
-              const docParser = new DOMParser();
-              const docHTML = docParser.parseFromString(note.content, 'text/html');
-              const checkboxes = docHTML.querySelectorAll('input.recurring, .todo-item.recurring input');
-              
-              let noteChanged = false;
-
-              checkboxes.forEach((cb: any) => {
-                  const checkedTime = cb.getAttribute('data-checked-time');
-                  const daysInterval = parseInt(cb.getAttribute('data-days') || '0');
-
-                  if (cb.checked && checkedTime && daysInterval > 0) {
-                      const lastCheckedDate = new Date(parseInt(checkedTime));
-                      
-                      // Hitung Target Reset: Jam 00:00 setelah (Interval) hari
-                      const targetResetDate = new Date(lastCheckedDate);
-                      targetResetDate.setDate(targetResetDate.getDate() + daysInterval);
-                      targetResetDate.setHours(0, 0, 0, 0); // Set jam 12 malam pas
-
-                      // Jika sekarang sudah melewati waktu reset
-                      if (now >= targetResetDate) {
-                          cb.removeAttribute('checked');
-                          cb.removeAttribute('data-checked-time');
-                          
-                          // Hapus style coret di parent
-                          const parent = cb.closest('.todo-item');
-                          if (parent) parent.classList.remove('completed');
-                          
-                          noteChanged = true;
-                      }
-                  }
-              });
-
-              if (noteChanged) {
-                  hasUpdates = true;
-                  const newContent = docHTML.body.innerHTML;
-                  
-                  // Update Firebase diam-diam
-                  updateDoc(doc(db, "notes", note.id), { 
-                      content: newContent,
-                      updatedAt: Date.now() // Opsional: update timestamp atau tidak
-                  });
-                  
-                  return { ...note, content: newContent };
-              }
-          }
-          return note;
-      });
-
-      // Update state lokal jika ada yang di-reset agar UI langsung berubah
-      if (hasUpdates) {
-          setNotes(updatedNotes);
-      } else {
-          setNotes(mergedNotes);
-      }
-      
-      setIsReady(true);
-      // ...
-
-      if (localNotes.length > 0) setSyncStatus('unsaved');
-    }, (err) => {
-      // Abaikan error permission sementara jika user object masih "fake"
-      // karena update user asli akan segera menyusul
-      if (err.code !== 'permission-denied') {
-          console.error("Notes Sync Error:", err);
-          setDbError(`Gagal memuat Catatan: ${err.message}`);
-      }
-    });
-
-    const qFolders = query(
-      collection(db, "folders"), 
-      where("userId", "==", user.uid), 
-      orderBy("createdAt", "desc")
-    );
-    
-    const unsubFolders = onSnapshot(qFolders, (snap) => {
-      setFolders(snap.docs.map(d => d.data() as Folder));
-    }, (err) => {
-      if (err.code !== 'permission-denied') {
-        console.error("Folder Sync Error:", err);
-        setDbError(prev => prev ? prev : `Gagal memuat Folder: ${err.message}`);
-      }
-    });
-
-    return () => { unsubNotes(); unsubFolders(); };
-  }, [user]); // useEffect akan re-run ketika user berubah dari "Fake" ke "Asli"
+  // --- FIREBASE LISTENERS TELAH DIHAPUS ---
+  // (Data sekarang memuat murni dari fungsi loadDataFromDrive)
 
    
 
@@ -508,12 +390,11 @@ export default function App() {
     return 'Nexus Notes';
   };
 
-  const handleImportData = async (data: { notes: Note[], folders: Folder[] }) => {
+ const handleImportData = async (data: { notes: Note[], folders: Folder[] }) => {
     try {
         const notesToImport = data.notes || [];
-        const foldersToImport = data.folders || [];
 
-        if (notesToImport.length === 0 && foldersToImport.length === 0) {
+        if (notesToImport.length === 0) {
             alert("File JSON kosong atau format tidak dikenali.");
             return;
         }
@@ -522,7 +403,7 @@ export default function App() {
             await saveNote({ ...note, userId: 'local_user', updatedAt: note.updatedAt || Date.now() });
         }
         
-        alert(`✅ Sukses! Berhasil memulihkan ${notesToImport.length} catatan. (Folder akan disinkronkan bertahap)`);
+        alert(`✅ Sukses! Berhasil memulihkan ${notesToImport.length} catatan. (Sinkronisasi Folder ditangguhkan sementara)`);
         window.location.reload(); 
 
     } catch (err: any) {
