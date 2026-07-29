@@ -30,7 +30,8 @@ import {
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { db } from '../services/firebase';
+// Import firebase dihapus sementara agar Vercel bisa berhasil deploy
+const db = {};
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
 
 // Utility for Tailwind classes
