@@ -8,9 +8,7 @@ import { HomeView } from './components/HomeView';
 import { PreviewSheet } from './components/PreviewSheet';
 import { SettingsView } from './components/SettingsView';
 import { TractView } from './components/TractView';
-import { getNotes, getFolders, saveNote, deleteNote, saveFolder, deleteFolder } from './services/storage';
-// Catatan: Jika getFolders, saveFolder, deleteFolder belum ada di storage.ts Anda, 
-// kita akan perlu menambahkannya nanti, atau untuk saat ini biarkan fungsi-fungsi tersebut tidak dipanggil.
+import { getNotes, saveNote, deleteNote } from './services/storage';
 
 // --- HELPER: LOCAL STORAGE (Tetap sama) --
 const getLocalNotes = (): Note[] => {
@@ -53,7 +51,8 @@ export default function App() {
 
       const expiredFolders = folders.filter(f => f.deletedAt && (now - f.deletedAt > ONE_DAY_MS));
       for (const f of expiredFolders) {
-        await deleteFolder(f.id); // Asumsikan Anda membuat deleteFolder di storage.ts
+        // Hapus komentar di bawah saat fitur folder selesai dibuat
+        // await deleteFolder(f.id); 
       }
       
       // Jika ada yang dihapus, fetch ulang dari Drive
@@ -123,6 +122,9 @@ export default function App() {
       await deleteNote(id); 
       removeFromLocalStorage(id); 
     }
+    
+    // Fitur hapus folder dari Google Drive akan ditambahkan nanti
+    // for (const id of folderIds) { await deleteFolder(id); }
     
     setNotes(prev => prev.filter(n => !noteIds.includes(n.id)));
     setFolders(prev => prev.filter(f => !folderIds.includes(f.id)));
@@ -731,7 +733,8 @@ export default function App() {
                     onRenameFolder={async (id, n) => {
                         setFolders(prev => prev.map(f => f.id === id ? { ...f, name: n } : f));
                         const folderToUpdate = folders.find(f => f.id === id);
-                        if (folderToUpdate) await saveFolder({ ...folderToUpdate, name: n });
+                        // Fitur save folder dari Google Drive akan ditambahkan nanti
+                        // if (folderToUpdate) await saveFolder({ ...folderToUpdate, name: n });
                     }} 
                     onDeleteItems={handleSoftDelete} 
                     onRestoreItems={handleRestore}
@@ -749,7 +752,7 @@ export default function App() {
                          }
                          for (const id of folderIds) {
                              const f = folders.find(x => x.id === id);
-                             if (f) await saveFolder({ ...f, parentId: targetFolderId || null });
+                             // if (f) await saveFolder({ ...f, parentId: targetFolderId || null });
                          }
                     }}
                     onImportData={handleImportData}
