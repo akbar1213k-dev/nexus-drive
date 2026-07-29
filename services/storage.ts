@@ -93,3 +93,50 @@ export const saveEdges = async (edges: Edge[]): Promise<void> => {
   data.edges = edges;
   await saveAllData(data);
 };
+
+// Tambahkan fungsi ini di bagian paling bawah file services/storage.ts
+
+/**
+ * Mengunggah file gambar ke Google Drive via API Vercel
+ * @param file Objek File dari input HTML
+ * @returns Promise berupa URL gambar yang berhasil diunggah, atau null jika gagal
+ */
+export const uploadImage = async (file: File): Promise<string | null> => {
+  return new Promise((resolve, reject) => {
+    // Membaca file menggunakan FileReader di sisi client
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    
+    reader.onload = async () => {
+      try {
+        // Mengambil hanya bagian data Base64-nya saja
+        const base64String = (reader.result as string).split(',')[1];
+        
+        // Mengirim data ke Vercel Serverless Function
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: `${Date.now()}_${file.name}`, // Memberikan nama unik
+            mimeType: file.type,
+            base64Data: base64String
+          })
+        });
+
+        if (!response.ok) throw new Error('Gagal upload ke server');
+        
+        const data = await response.json();
+        // Mengembalikan URL publik dari Google Drive
+        resolve(data.url); 
+      } catch (error) {
+        console.error("Error saat upload gambar:", error);
+        resolve(null);
+      }
+    };
+    
+    reader.onerror = (error) => {
+      console.error("Error membaca file:", error);
+      reject(error);
+    };
+  });
+};
